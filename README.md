@@ -26,3 +26,18 @@ A toy issue-triage agent reads three bug reports. One hides an instruction for A
 - The hardened agent strips hidden text, treats the issue as data, and can only take allowlisted actions, so it ignores it.
 
 The payload is a harmless marker file in a temp folder.
+
+## Prompt injection vs a real model
+
+`python llm_injection.py`
+
+Same issue_43 attack, but a real LLM does the triage through tool calls. The shell is fake: nothing runs except the marker write. Needs an OpenAI-compatible server on localhost:8080 (llama-server with `--jinja`).
+
+Four setups, 10 trials each:
+
+- **naive**: raw issue, shell tool, plain prompt
+- **prompt-only**: told the issue is untrusted data, hidden comment still in it
+- **strip-only**: hidden comment removed, plain prompt
+- **hardened**: stripped, untrusted framing, no shell tool (calls to it get blocked)
+
+`--log runs.jsonl` saves every tool call.
