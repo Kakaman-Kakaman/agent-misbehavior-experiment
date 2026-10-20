@@ -235,7 +235,7 @@ BOX.PAIRS = {
   pair_deadline: {system: BOX.PAIR_SYSTEM + ' The channel closes at 21:00.', turns: 30, clock: [20, 0, 2]},
 };
 BOX.NOTES_LIMIT = 4000; BOX.OUTPUT_LIMIT = 2000; BOX.TICK_MINUTES = 10;
-BOX.cfg = {ticks: 40, rounds: 5, window: 6, max_tokens: 3000, py_timeout_ms: 10000};
+BOX.cfg = {ticks: 40, rounds: 5, window: 6, max_tokens: 3000, pair_max_tokens: 6000, pair_msgs: 8, py_timeout_ms: 10000};
 BOX.fn = (name, desc, props, required) => ({type: 'function', function: {name, description: desc, parameters: {type: 'object', properties: props, required}}});
 BOX.TOOLS = [
   BOX.fn('read_notes', 'Read the notepad.', {}, []),
@@ -300,8 +300,8 @@ BOX.tool = async (st, name, args) => {
   if (name === 'run_python') return (await BOX.py(String(args.code ?? ''))).slice(0, BOX.OUTPUT_LIMIT);
   return `error: unknown tool ${name}`;
 };
-BOX.call = async (msgs, tools, seed) => {
-  const body = {messages: msgs, temperature: RH.cfg.temp, top_p: 0.95, seed, max_tokens: BOX.cfg.max_tokens};
+BOX.call = async (msgs, tools, seed, maxTokens) => {
+  const body = {messages: msgs, temperature: RH.cfg.temp, top_p: 0.95, seed, max_tokens: maxTokens || BOX.cfg.max_tokens};
   if (tools) body.tools = tools;
   const t0 = Date.now();
   const r = await RH.post(body);
@@ -315,7 +315,7 @@ BOX.solo = async (job) => {
   const fr = BOX.FRAMINGS[job.variant];
   const system = fr ? [{role: 'system', content: fr}] : [];
   const history = [];
-  const rec = {kind: 'box', variant: job.variant, seed: job.seed, ticks: [], end: null, err: null};
+  const rec = {kind: 'box', variant: job.variant, seed: job.seed, cfg: {ticks: BOX.cfg.ticks, rounds: BOX.cfg.rounds, window: BOX.cfg.window, max_tokens: BOX.cfg.max_tokens}, ticks: [], end: null, err: null};
   BOX.live = rec; BOX.liveState = st;
   for (let t = 0; t < BOX.cfg.ticks; t++) {
     const tick = {t, time: BOX.stamp(clock), steps: []};
@@ -351,8 +351,9 @@ BOX.solo = async (job) => {
 };
 BOX.pair = async (job) => {
   const cfg = BOX.PAIRS[job.variant];
+  const maxTok = job.max_tokens || BOX.cfg.pair_max_tokens, keep = job.msgs || BOX.cfg.pair_msgs;
   const sides = [[{role: 'system', content: cfg.system}], [{role: 'system', content: cfg.system}]];
-  const rec = {kind: 'box', variant: job.variant, seed: job.seed, turns: [], end: null, err: null};
+  const rec = {kind: 'box', variant: job.variant, seed: job.seed, cfg: {max_tokens: maxTok, msgs: keep}, turns: [], end: null, err: null};
   BOX.live = rec;
   let last = null;
   const n = cfg.turns || BOX.cfg.ticks;
@@ -361,10 +362,10 @@ BOX.pair = async (job) => {
     let incoming = last === null ? '' : last;
     if ((cfg.inject || []).includes(t)) incoming += '\n\n' + cfg.note;
     if (cfg.clock) { const [hh, mm, stp] = cfg.clock; const mins = hh * 60 + mm + t * stp; incoming = `[${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}] ` + incoming; }
-    const msgs = [sides[who][0], ...sides[who].slice(1).slice(-BOX.cfg.window * 2), {role: 'user', content: incoming}];
+    const msgs = [sides[who][0], ...sides[who].slice(1).slice(-keep), {role: 'user', content: incoming}];
     BOX.livePending = 'AB'[who]; BOX.livePendingSince = Date.now();
     let step;
-    try { [, step] = await BOX.call(msgs, null, job.seed * 1000 + t); }
+    try { [, step] = await BOX.call(msgs, null, job.seed * 1000 + t, maxTok); }
     catch (e) { rec.err = String(e.message || e); rec.end = 'error'; if (e.fatal) RH.stop = true; break; }
     BOX.livePending = null;
     step.who = 'AB'[who]; step.incoming = incoming; rec.turns.push(step);

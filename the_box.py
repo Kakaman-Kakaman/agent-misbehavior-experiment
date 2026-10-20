@@ -114,8 +114,8 @@ def post(base, body, timeout):
         return json.load(r)
 
 
-def call(base, msgs, tools, seed, args):
-    body = {"messages": msgs, "temperature": args.temp, "top_p": 0.95, "seed": seed, "max_tokens": args.max_tokens}
+def call(base, msgs, tools, seed, args, max_tokens=None):
+    body = {"messages": msgs, "temperature": args.temp, "top_p": 0.95, "seed": seed, "max_tokens": max_tokens or args.max_tokens}
     if args.top_k:
         body["top_k"] = args.top_k
     if tools:
@@ -140,7 +140,8 @@ def solo(base, framing, seed, args, python=None):
     clock = datetime.datetime(2026, 10, 20, 19, 0)
     system = [{"role": "system", "content": FRAMINGS[framing]}] if FRAMINGS[framing] else []
     history = []
-    rec = dict(kind="box", variant=framing, seed=seed, ticks=[], end=None, err=None)
+    rec = dict(kind="box", variant=framing, seed=seed, ticks=[], end=None, err=None,
+               cfg=dict(ticks=args.ticks, rounds=args.rounds, window=args.window, max_tokens=args.max_tokens))
     for t in range(args.ticks):
         tick = {"t": t, "time": stamp(clock), "steps": []}
         turn = [{"role": "user", "content": stamp(clock)}]
@@ -184,7 +185,8 @@ def solo(base, framing, seed, args, python=None):
 def pair(base, seed, args, variant="pair"):
     cfg = PAIRS[variant]
     sides = [[{"role": "system", "content": cfg["system"]}], [{"role": "system", "content": cfg["system"]}]]
-    rec = dict(kind="box", variant=variant, seed=seed, turns=[], end=None, err=None)
+    rec = dict(kind="box", variant=variant, seed=seed, turns=[], end=None, err=None,
+               cfg=dict(max_tokens=args.pair_max_tokens, msgs=args.pair_msgs))
     last = None
     for t in range(cfg.get("turns") or args.ticks):
         who = t % 2
@@ -195,9 +197,9 @@ def pair(base, seed, args, variant="pair"):
             h, m, step_min = cfg["clock"]
             mins = h * 60 + m + t * step_min
             incoming = f"[{mins // 60:02d}:{mins % 60:02d}] " + incoming
-        msgs = sides[who][:1] + sides[who][1:][-args.window * 2:] + [{"role": "user", "content": incoming}]
+        msgs = sides[who][:1] + sides[who][1:][-args.pair_msgs:] + [{"role": "user", "content": incoming}]
         try:
-            m, step = call(base, msgs, None, seed * 1000 + t, args)
+            m, step = call(base, msgs, None, seed * 1000 + t, args, args.pair_max_tokens)
         except (urllib.error.URLError, OSError, ValueError) as e:
             rec["err"], rec["end"] = str(e), "error"
             break
@@ -240,6 +242,8 @@ def main():
     p.add_argument("--temp", type=float, default=0.6)
     p.add_argument("--top-k", type=int, default=None)
     p.add_argument("--max-tokens", type=int, default=3000)
+    p.add_argument("--pair-max-tokens", type=int, default=6000, help="per message in pair runs; 3000 cut replies mid-sentence")
+    p.add_argument("--pair-msgs", type=int, default=8, help="how many earlier messages each side sees")
     p.add_argument("--timeout", type=int, default=600)
     p.add_argument("--python", action="store_true", help="let the model run Python on this machine (no sandbox)")
     p.add_argument("--log", default="box_runs.jsonl")
