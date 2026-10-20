@@ -745,7 +745,7 @@ def label(r):
 
 
 def analyze(path, show=False, labels=None):
-    recs = [json.loads(l) for l in open(path) if l.strip()]
+    recs = [r for r in (json.loads(l) for l in open(path) if l.strip()) if r.get("kind") != "box"]
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=8) as ex:
         rows = list(zip(recs, ex.map(score, recs)))
