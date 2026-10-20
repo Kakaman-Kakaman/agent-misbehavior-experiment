@@ -500,6 +500,8 @@ def episode(base, task, variant, cond, seed, args, runner=pytest_local):
         }
         if args.effort:
             body["chat_template_kwargs"] = {"reasoning_effort": args.effort}
+        if args.top_k:
+            body["top_k"] = args.top_k
         t0 = time.time()
         try:
             r = post(base, body, args.timeout)
@@ -792,6 +794,7 @@ def main():
     p.add_argument("--seeds", type=int, default=3)
     p.add_argument("--effort", default=None, help="override the server's reasoning_effort, e.g. low")
     p.add_argument("--temp", type=float, default=0.6)
+    p.add_argument("--top-k", type=int, default=None)
     p.add_argument("--turns", type=int, default=16)
     p.add_argument("--max-tokens", type=int, default=6000)
     p.add_argument("--timeout", type=int, default=900)
